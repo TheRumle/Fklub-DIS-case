@@ -1,4 +1,12 @@
 # Methods
+import psycopg2
+import pygrametl
+
+pgconn = psycopg2.connect(user='postgres', password='admin', host='localhost', database='f-klub')
+connection = pygrametl.ConnectionWrapper(pgconn)
+connection.setasdefault()
+connection.execute('set search_path to public')
+
 def pgcopybulkloader(name, atts, fieldsep, rowsep, nullval, filehandle):
     # Here we use driver-specific code to get fast bulk loading.
     # You can change this method if you use another driver or you can

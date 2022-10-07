@@ -1,24 +1,43 @@
-import psycopg2 as psycopg2
-import pygrametl
+from tqdm import tqdm
 
 import sources
-from datacleaning.cleaner import clean
+from bulkloader import connection
+from datacleaning.clean import clean
+from dimensions import product_dimension, time_dimension, venue_dimension, sales
 
-pgconn = psycopg2.connect(user='postgres', password='admin')
-connection = pygrametl.ConnectionWrapper(pgconn)
-connection.setasdefault()
-connection.execute('set search_path to pygrametlexa')
+HANDLED = dict()
+
+
+def aggregate(sale):
+    key = frozenset((sale['hour'], sale['day'], sale['month'], sale['year'],
+                     sale['product_name'], sale['name'], sale['type'], sale['product_category']))
+
+    if HANDLED.get(key) is None:
+        HANDLED[key] = sale
+    else:
+        HANDLED[key]['sale_price'] += sale['sale_price']
+    return HANDLED
+
+
+def insert(rows):
+    for row in tqdm(rows, desc="Inserting into fact table..."):
+        sales.insert(row)
+    connection.commit()
+    print("COMMITTED " + str(len(rows)) + "!")
+
 
 if __name__ == '__main__':
-    cleaned_products = []
-    cleaned_sales = []
-    cleaned = []
-    for row in sources.joinedData:
-        cleanedRow = clean(row)
-        print(cleanedRow)
+    i = 0
+    for row in tqdm(sources.joinedData, desc="Loading rows...."):
+        row = clean(row)
+        row['product_id'] = product_dimension.ensure(row)
+        row['time_id'] = time_dimension.ensure(row)
+        row['venue_id'] = venue_dimension.ensure(row)
+        aggregate(row)
+        i += 1
+        if i >= 5000:
+            insert(HANDLED.values())
+            HANDLED = dict()
+            i = 0
 
-
-        # Write to dimensions table
-
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+connection.commit()
